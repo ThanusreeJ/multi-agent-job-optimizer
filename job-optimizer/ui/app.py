@@ -1,9 +1,11 @@
 """
-Job Optimizer - Production Schedule Optimizer
+Multi-Agent Production Job Optimizer - Manager Dashboard
 """
 
 import streamlit as st
 import pandas as pd
+import plotly.figure_factory as ff
+import plotly.graph_objects as go
 from datetime import datetime, time
 import os
 import sys
@@ -16,21 +18,42 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.job import Job
-from models.machine import Machine
-from models.constraint import Constraint
+from models.machine import Machine, Constraint
 from utils.baseline_scheduler import BaselineScheduler
 from agents.batching_agent import BatchingAgent
 from agents.bottleneck_agent import BottleneckAgent
+from agents.constraint_agent import ConstraintAgent
+from agents.orchestrator import OptimizationOrchestrator
+from utils.data_generator import generate_random_jobs, get_demo_machines, get_demo_constraint
 
-st.set_page_config(page_title="Multi-Agent Job Optimizer", layout="wide")
+st.set_page_config(
+    page_title="Multi-Agent Job Optimizer",
+    page_icon="🏭",
+    layout="wide"
+)
 
-# Custom CSS
+# Custom Styling
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.8rem;
         font-weight: bold;
         color: #1f77b4;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #666;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .kpi-metric {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        text-align: center;
     }
     .status-badge {
         display: inline-block;
@@ -45,220 +68,195 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<p class="main-header">🚀 Multi-Agent Production Job Optimizer</p>', unsafe_allow_html=True)
-
-
-with st.expander("ℹ️ System Capabilities", expanded=False):
-    st.markdown("""
-    - **Baseline Scheduler:** Standard FIFO approach for comparison
-    - **Batching Optimization:** Groups similar jobs to minimize setup times
-    - **Load Balancing:** Distributes work evenly across available machines
-    """)
+st.markdown('<p class="main-header">🏭 Multi-Agent Production Optimizer</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">AI-Driven Manufacturing Scheduling & Load Balance</p>', unsafe_allow_html=True)
 
 # Initialize session state
 if 'jobs' not in st.session_state:
     st.session_state.jobs = []
 if 'machines' not in st.session_state:
-    st.session_state.machines = []
+    st.session_state.machines = get_demo_machines()
 if 'constraint' not in st.session_state:
-    st.session_state.constraint = None
+    st.session_state.constraint = get_demo_constraint()
+if 'results' not in st.session_state:
+    st.session_state.results = {}
 
-# Sidebar for input
-st.sidebar.header("📥 Configuration")
+# Sidebar Configuration
+with st.sidebar:
+    st.header("📥 Data Management")
+    
+    gen_col1, gen_col2 = st.columns(2)
+    with gen_col1:
+        if st.button("🎲 Small Batch", use_container_width=True):
+            st.session_state.jobs = generate_random_jobs(8, rush_probability=0.2)
+            st.session_state.results = {}
+            st.success("Generated 8 jobs")
+    with gen_col2:
+        if st.button("🚀 Production", use_container_width=True):
+            st.session_state.jobs = generate_random_jobs(20, rush_probability=0.3)
+            st.session_state.results = {}
+            st.success("Generated 20 jobs")
+            
+    st.markdown("---")
+    st.header("⚙️ Constraint Tweaks")
+    
+    constraint = st.session_state.constraint
+    shift_col1, shift_col2 = st.columns(2)
+    with shift_col1:
+        constraint.shift_start = st.time_input("Start", value=constraint.shift_start)
+    with shift_col2:
+        constraint.shift_end = st.time_input("End", value=constraint.shift_end)
+        
+    st.markdown("---")
+    st.markdown("### System Status")
+    st.success("✅ Groq AI Connected")
+    st.info(f"📦 {len(st.session_state.jobs)} jobs loaded")
 
-from utils.data_generator import generate_random_jobs, get_demo_machines, get_demo_constraint
-
-# ... imports remain same ...
-
-# Sidebar for input
-st.sidebar.header("📥 Configuration")
-
-# Sample data generator
-if st.sidebar.button("🎲 Generate Random Data"):
-    
-    # 1. Generate 5 Random Jobs
-    sample_jobs = generate_random_jobs(5)
-    
-    # 2. Get Standard Demo Machines & Constraints
-    sample_machines = get_demo_machines()
-    sample_constraint = get_demo_constraint()
-    
-    st.session_state.jobs = sample_jobs
-    st.session_state.machines = sample_machines
-    st.session_state.constraint = sample_constraint
-    
-    # Reset results on new data
-    if 'result_baseline' in st.session_state: del st.session_state.result_baseline
-    if 'result_batching' in st.session_state: del st.session_state.result_batching
-    if 'result_final' in st.session_state: del st.session_state.result_final
-    
-    st.sidebar.success(f"✅ Generated {len(sample_jobs)} Random Jobs!")
-    
-    st.sidebar.success(f"✅ Generated {len(sample_jobs)} Random Jobs!")
-    
-# Persistent Data Preview
+# Data Preview
 if st.session_state.jobs:
-    with st.expander("📋 View Generated Input Data", expanded=True):
-        data_preview = []
-        for job in st.session_state.jobs:
-            data_preview.append({
-                "Job ID": job.job_id,
-                "Product": job.product_type,
-                "Processing (min)": job.processing_time,
-                "Due Time": job.due_time.strftime("%H:%M"),
-                "Priority": "⚡ RUSH" if job.priority == 'rush' else "Normal"
-            })
+    with st.expander("📋 View Input Job Queue", expanded=False):
+        data_preview = [{
+            "Job ID": j.job_id,
+            "Product": j.product_type,
+            "Duration": f"{j.processing_time} min",
+            "Deadline": j.due_time.strftime("%H:%M"),
+            "Priority": "⚡ RUSH" if j.is_rush else "Normal"
+        } for j in st.session_state.jobs]
         st.dataframe(pd.DataFrame(data_preview), use_container_width=True)
-        st.info("💡 Note: Deadlines are TIGHT (09:00-11:00) to challenge the scheduler.")
 
-# Main content area
-st.header("🎯 Optimization Controls")
+# Main Controls
+st.header("🎯 AI Orchestration")
+c1, c2, c3, c4 = st.columns(4)
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("📊 Run Baseline Scheduler (FIFO)", use_container_width=True):
-        if not st.session_state.jobs:
-            st.error("❌ Please generate or upload data first!")
+with c1:
+    if st.button("📊 Baseline (FIFO)", use_container_width=True):
+        if not st.session_state.jobs: st.error("No jobs!")
         else:
-            with st.spinner("Running baseline scheduler..."):
+            with st.spinner("Running Baseline..."):
                 baseline = BaselineScheduler()
-                schedule, explanation = baseline.schedule(
-                    st.session_state.jobs,
-                    st.session_state.machines,
-                    st.session_state.constraint
-                )
-                st.session_state.result_baseline = schedule
-                st.success("✅ Baseline schedule complete!")
-                st.markdown("**Explanation:** Simple FIFO logic. Notice high Tardiness because Rush jobs waited in line.")
+                sched, explanation = baseline.schedule(st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
+                st.session_state.results['Baseline'] = {'schedule': sched, 'explanation': explanation}
+                st.success("Fixed Baseline Done")
 
-with col2:
-    if st.button("🔄 Run Batching Optimization (AI)", use_container_width=True):
-        if not st.session_state.jobs:
-            st.error("❌ Please generate data first!")
+with c2:
+    if st.button("🔄 Batching (AI)", use_container_width=True):
+        if not st.session_state.jobs: st.error("No jobs!")
         else:
-            with st.spinner("Optimization Phase 1: AI Grouping Logic..."):
-                batching_agent = BatchingAgent()
-                schedule, explanation = batching_agent.create_batched_schedule(
-                    st.session_state.jobs,
-                    st.session_state.machines,
-                    st.session_state.constraint
-                )
-                # CRITICAL: Calculate KPIs so the Comparison Table doesn't crash
-                schedule.calculate_kpis(st.session_state.machines, st.session_state.constraint)
-                
-                st.session_state.result_batching = schedule
-                st.success("✅ AI Batching complete!")
-                st.markdown("**Explanation:** AI grouped jobs by Product Type. Setup Time dropped, but load might be unbalanced.")
+            with st.spinner("AI Grouping..."):
+                agent = BatchingAgent()
+                sched, explanation = agent.create_batched_schedule(st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
+                sched.calculate_kpis(st.session_state.machines, st.session_state.constraint)
+                st.session_state.results['Batching'] = {'schedule': sched, 'explanation': explanation}
+                st.success("Batching Optimized")
 
-with col3:
-    if st.button("⚖️ Run Load Balancing (AI)", use_container_width=True):
-        if not st.session_state.jobs:
-            st.error("❌ Please generate data first!")
-        elif 'result_batching' not in st.session_state:
-            st.error("❌ Run Batching Optimization first!")
+with c3:
+    if st.button("⚖️ Load Balance (AI)", use_container_width=True):
+        if 'Batching' not in st.session_state.results: st.error("Run Batching first!")
         else:
-            with st.spinner("Optimization Phase 2: Balancing Machine Workloads..."):
-                bottleneck_agent = BottleneckAgent()
-                schedule, explanation = bottleneck_agent.rebalance_schedule(
-                    st.session_state.result_batching,
-                    st.session_state.machines,
-                    st.session_state.constraint,
-                    st.session_state.jobs
-                )
-                # CRITICAL: Calculate KPIs
-                schedule.calculate_kpis(st.session_state.machines, st.session_state.constraint)
-                
-                st.session_state.result_final = schedule
-                st.success("✅ Workload balancing complete!")
-                st.markdown("**Explanation:** Jobs moved from busy machines to free ones. Optimization Achieved!")
+            with st.spinner("Balancing Workload..."):
+                agent = BottleneckAgent()
+                sched, explanation = agent.rebalance_schedule(st.session_state.results['Batching']['schedule'], st.session_state.machines, st.session_state.constraint, st.session_state.jobs)
+                sched.calculate_kpis(st.session_state.machines, st.session_state.constraint)
+                st.session_state.results['Balanced'] = {'schedule': sched, 'explanation': explanation}
+                st.success("Workload Balanced")
 
-# Results display
-st.header("📈 Results Dashboard")
+with c4:
+    if st.button("🤖 Orchestrated (Full)", use_container_width=True, type="primary"):
+        if not st.session_state.jobs: st.error("No jobs!")
+        else:
+            with st.status("🚀 Multi-Agent Workflow Running...", expanded=True) as status:
+                st.write("👔 Supervisor analyzing...")
+                st.write("🔄 specialist agents collaborating...")
+                orchestrator = OptimizationOrchestrator()
+                res = orchestrator.optimize(st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
+                if res['success']:
+                    st.session_state.results['Orchestrated'] = {'schedule': res['schedule'], 'explanation': res['explanation']}
+                    status.update(label="✅ Comprehensive Optimization Success!", state="complete")
+                    st.balloons()
+                else:
+                    status.update(label="❌ Optimization Failed - Constraints unmet", state="error")
 
-# COMPARISON MATRIX (New Section)
-if 'result_baseline' in st.session_state and 'result_final' in st.session_state:
-    st.subheader("⚖️ Strategy Comparison")
+# Visualization Logic
+def create_gantt(schedule):
+    colors = {'P_A': '#1f77b4', 'P_B': '#ff7f0e', 'P_C': '#2ca02c'}
+    fig = go.Figure()
+    for m_id, assigns in schedule.assignments.items():
+        for a in assigns:
+            start_min = a.start_time.hour * 60 + a.start_time.minute
+            dur = a.job.processing_time
+            fig.add_trace(go.Bar(
+                name=a.job.job_id, y=[m_id], x=[dur], base=start_min, orientation='h',
+                marker=dict(color=colors.get(a.job.product_type, '#999999')),
+                text=f"{a.job.job_id}({a.job.product_type})", textposition='inside',
+                hovertemplate=f"<b>{a.job.job_id}</b><br>Start: {a.start_time.strftime('%H:%M')}<br>Priority: {a.job.priority}<extra></extra>"
+            ))
+    fig.update_layout(
+        barmode='overlay', height=300, margin=dict(l=0, r=0, t=30, b=0),
+        xaxis=dict(tickmode='array', tickvals=[480, 540, 600, 660, 720, 780, 840, 900, 960],
+                  ticktext=['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'],
+                  title="Shift Timeline")
+    )
+    return fig
+
+# Dashboard Display
+if st.session_state.results:
+    st.markdown("---")
+    st.header("📊 Strategy Comparison Dashboard")
     
-    base_kpi = st.session_state.result_baseline.kpis
-    batch_kpi = st.session_state.result_batching.kpis
-    final_kpi = st.session_state.result_final.kpis
+    # Comparison Table
+    metrics = ["Tardiness (min)", "Setup Time (min)", "Switches", "Balance Imbalance (%)"]
+    comp_data = {"Metric": metrics}
+    for name, data in st.session_state.results.items():
+        k = data['schedule'].kpis
+        comp_data[name] = [k.total_tardiness, k.total_setup_time, k.num_setup_switches, f"{k.utilization_imbalance:.1f}%"]
     
-    comp_data = {
-        "Metric": ["Total Tardiness (min)", "Setup Time (min)", "Load Imbalance (%)"],
-        "Baseline (FIFO)": [base_kpi.total_tardiness, base_kpi.total_setup_time, f"{base_kpi.utilization_imbalance:.1f}"],
-        "Batching (AI)": [batch_kpi.total_tardiness, batch_kpi.total_setup_time, f"{batch_kpi.utilization_imbalance:.1f}"],
-        "Bottleneck (AI)": [final_kpi.total_tardiness, final_kpi.total_setup_time, f"{final_kpi.utilization_imbalance:.1f}"],
-    }
     st.table(pd.DataFrame(comp_data))
+    
+    # Selection for detailed view
+    view_mode = st.radio("Select Schedule to Visualize:", list(st.session_state.results.items()), format_func=lambda x: x[0], horizontal=True)
+    selected_name, selected_data = view_mode
+    selected_sched = selected_data['schedule']
+    selected_explanation = selected_data.get('explanation', "No detailed reasoning available for this mode.")
+    
+    col_viz1, col_viz2 = st.columns([2, 1])
+    with col_viz1:
+        st.subheader(f"📅 {selected_name} Schedule Visualization")
+        st.plotly_chart(create_gantt(selected_sched), use_container_width=True)
+        
+        # Job Allocation Table
+        st.subheader(f"📋 {selected_name} Job Allocation Details")
+        sched_rows = []
+        for m_id, assigns in selected_sched.assignments.items():
+            for a in assigns:
+                sched_rows.append({
+                    "Machine": m_id,
+                    "Job ID": a.job.job_id,
+                    "Product": a.job.product_type,
+                    "Start": a.start_time.strftime("%H:%M"),
+                    "End": a.end_time.strftime("%H:%M"),
+                    "Duration": f"{a.job.processing_time} min",
+                    "Priority": "⚡ RUSH" if a.job.is_rush else "Normal"
+                })
+        if sched_rows:
+            df_sched = pd.DataFrame(sched_rows).sort_values(by=["Machine", "Start"])
+            st.dataframe(df_sched, use_container_width=True, hide_index=True)
+        
+    with col_viz2:
+        st.subheader("📝 AI Reasoning")
+        st.markdown(selected_explanation)
+            
+    # Validation Check
+    st.subheader("✅ Compliance Report")
+    with st.spinner("Validating..."):
+        v_agent = ConstraintAgent()
+        valid, violations, report = v_agent.validate_schedule(selected_sched, st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
+        if valid:
+            st.success("✓ This schedule complies with all operational constraints.")
+        else:
+            st.error(f"✗ Found {len(violations)} violations.")
+            for v in violations: st.write(f"- {v}")
 
-# ... (Detailed Results Logic) ...
-if 'result_final' in st.session_state:
-    # ... (Show Final Schedule Table) ...
-    st.subheader("✅ Final Optimized Schedule")
-    st.markdown("**Status:** Fully Optimized (Batching + Load Balancing Applied)")
-    
-    schedule = st.session_state.result_final
-    
-    if schedule.kpis:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Tardiness", f"{schedule.kpis.total_tardiness} min", delta_color="inverse")
-        with col2:
-            st.metric("Setup Time", f"{schedule.kpis.total_setup_time} min", delta_color="inverse")
-        with col3:
-            st.metric("Setup Switches", schedule.kpis.num_setup_switches, delta_color="inverse")
-        with col4:
-            st.metric("Load Imbalance", f"{schedule.kpis.utilization_imbalance:.1f}%", delta_color="inverse")
-    
-    # Show schedule table
-    schedule_data = []
-    for machine_id, assignments in schedule.assignments.items():
-        for assignment in assignments:
-            schedule_data.append({
-                "Machine": machine_id,
-                "Job": assignment.job.job_id,
-                "Product": assignment.job.product_type,
-                "Start": assignment.start_time.strftime("%H:%M"),
-                "End": assignment.end_time.strftime("%H:%M"),
-                "Rush": "⚡ Yes" if assignment.job.is_rush else "No"
-            })
-    
-    if schedule_data:
-        df = pd.DataFrame(schedule_data)
-        st.dataframe(df, use_container_width=True)
 
-elif 'result_batching' in st.session_state:
-    st.subheader("🔄 Optimization Phase 1 Results")
-    st.markdown("**Status:** Batched for Efficiency (Load Balancing Pending)")
-    
-    schedule = st.session_state.result_batching
-    
-    if schedule.kpis:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Tardiness", f"{schedule.kpis.total_tardiness} min")
-        with col2:
-            st.metric("Setup Switches", schedule.kpis.num_setup_switches)
-        with col3:
-            st.metric("Setup Time", f"{schedule.kpis.total_setup_time} min")
-
-elif 'result_baseline' in st.session_state:
-    st.subheader("📊 Baseline (FIFO) Results")
-    st.markdown("**Status:** Unoptimized Reference Schedule")
-    
-    schedule = st.session_state.result_baseline
-    
-    if schedule.kpis:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Tardiness", f"{schedule.kpis.total_tardiness} min")
-        with col2:
-            st.metric("Setup Time", f"{schedule.kpis.total_setup_time} min")
-
-else:
-    st.info("  run the optimizer.")
-
-# Footer
 st.markdown("---")
-st.markdown("**Multi-Agent Job Optimizer** • Powered by Groq AI & LangChain")
+st.markdown("<div style='text-align: center; color: #999;'>Multi-Agent Production Optimizer | Day 5 Manager Demo</div>", unsafe_allow_html=True)
+

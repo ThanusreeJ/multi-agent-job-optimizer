@@ -8,4 +8,10 @@ This package contains all data structures used throughout the system:
 - KPI: Key Performance Indicators for schedule evaluation
 """
 
+from .job import Job
+from .machine import Machine
+from .schedule import Schedule, KPI
+from .constraint import Constraint
+
 __all__ = ['Job', 'Machine', 'Schedule', 'KPI', 'Constraint']
+

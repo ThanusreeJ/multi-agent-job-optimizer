@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from models.job import Job
 from models.machine import Machine, Constraint
 
-def generate_random_jobs(num_jobs: int = 5) -> List[Job]:
+def generate_random_jobs(num_jobs: int = 5, rush_probability: float = 0.3) -> List[Job]:
     """
     Generate random jobs with TIGHT deadlines to force optimization needs.
     """
@@ -17,7 +17,8 @@ def generate_random_jobs(num_jobs: int = 5) -> List[Job]:
     
     for i in range(num_jobs):
         prod = random.choice(products)
-        is_rush = random.random() < 0.3  # 30% chance of rush
+        is_rush = random.random() < rush_probability  # Use the parameter
+
         
         # Deadlines are TIGHT (09:00 - 11:00) to ensure Baseline fails
         due_hour = random.randint(9, 11) 
