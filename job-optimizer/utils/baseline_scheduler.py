@@ -8,7 +8,7 @@ Purpose: Show the improvement achieved by the AI-powered optimizer.
 """
 
 import os
-from datetime import time
+from datetime import time, datetime
 from typing import List, Tuple
 from collections import defaultdict
 
@@ -89,39 +89,64 @@ class BaselineScheduler:
             machine = compatible[0]
             machine_id = machine.machine_id
             
-            # Calculate setup time (but don't optimize for it)
-            prev_product = current_product[machine_id]
-            if prev_product and prev_product != job.product_type:
-                setup_time = constraint.get_setup_time(prev_product, job.product_type)
-            elif prev_product == job.product_type:
-                setup_time = constraint.get_setup_time(job.product_type, job.product_type)
-            else:
-                setup_time = 0
+            # Start searching for a slot
+            search_start_time = current_time[machine_id]
+            found_slot = False
             
-            # Calculate timing (no downtime avoidance)
-            start = current_time[machine_id]
-            start_minutes = start.hour * 60 + start.minute + setup_time
-            end_minutes = start_minutes + job.processing_time
+            # Max 10 attempts to find a slot (naive but avoids downtime)
+            for _ in range(10):
+                # Calculate setup time
+                prev_product = current_product[machine_id]
+                if prev_product and prev_product != job.product_type:
+                    setup_time = constraint.get_setup_time(prev_product, job.product_type)
+                elif prev_product == job.product_type:
+                    setup_time = constraint.get_setup_time(job.product_type, job.product_type)
+                else:
+                    setup_time = 0
+                
+                # Proposed timing
+                start_min = search_start_time.hour * 60 + search_start_time.minute + setup_time
+                end_min = start_min + job.processing_time
+                
+                # Shift boundary check
+                shift_end_min = constraint.shift_end.hour * 60 + constraint.shift_end.minute + constraint.max_overtime_minutes
+                if end_min > shift_end_min:
+                    break # Job won't fit on this machine today
+                    
+                proposed_start = time(start_min // 60, start_min % 60)
+                proposed_end = time(min(end_min // 60, 23), end_min % 60)
+                
+                # Check downtime conflicts
+                conflict_dt = None
+                now = datetime.now()
+                for downtime in machine.downtime_windows:
+                    if downtime.overlaps_with(proposed_start, proposed_end, date_context=now):
+                        conflict_dt = downtime
+                        break
+                
+                if not conflict_dt:
+                    # Found a slot
+                    assignment = JobAssignment(
+                        job=job,
+                        machine_id=machine_id,
+                        start_time=proposed_start,
+                        end_time=proposed_end,
+                        setup_time_before=setup_time
+                    )
+                    schedule.add_assignment(assignment)
+                    
+                    # Update tracking
+                    current_time[machine_id] = proposed_end
+                    current_product[machine_id] = job.product_type
+                    jobs_assigned += 1
+                    found_slot = True
+                    break
+                else:
+                    # Skip past downtime
+                    search_start_time = time(conflict_dt.end_time.hour, conflict_dt.end_time.minute)
             
-            # Simple time conversion (may exceed shift)
-            proposed_start = time(min(start_minutes // 60, 23), start_minutes % 60)
-            proposed_end = time(min(end_minutes // 60, 23), end_minutes % 60)
-            
-            # Create assignment (no validation!)
-            assignment = JobAssignment(
-                job=job,
-                machine_id=machine_id,
-                start_time=proposed_start,
-                end_time=proposed_end,
-                setup_time_before=setup_time
-            )
-            
-            schedule.add_assignment(assignment)
-            
-            # Update tracking
-            current_time[machine_id] = proposed_end
-            current_product[machine_id] = job.product_type
-            jobs_assigned += 1
+            if not found_slot:
+                jobs_skipped += 1
         
         # Calculate KPIs for the schedule (machines first, then constraint)
         schedule.calculate_kpis(machines, constraint)

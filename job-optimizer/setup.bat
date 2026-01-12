@@ -16,7 +16,7 @@ if %errorlevel% neq 0 (
 echo [2/3] Activating environment and installing dependencies...
 call venv\Scripts\activate.bat
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt --force-reinstall --no-cache-dir
 if %errorlevel% neq 0 (
     echo ERROR: Failed to install dependencies
     pause

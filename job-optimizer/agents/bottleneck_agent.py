@@ -15,7 +15,7 @@ Uses Groq's llama-3.3-70b-versatile for load balancing decisions.
 
 import os
 from typing import List, Dict, Any, Tuple
-from datetime import time
+from datetime import time, datetime
 from collections import defaultdict
 
 from langchain_groq import ChatGroq
@@ -43,6 +43,11 @@ class BottleneckAgent:
         """
         if groq_api_key is None:
             groq_api_key = os.getenv('GROQ_API_KEY')
+        
+        # FIX: Remove proxy variables that trigger the 'proxies' argument error in newer httpx versions
+        for var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+            if var in os.environ:
+                del os.environ[var]
         
         if not groq_api_key:
             raise ValueError("Groq API key required. Set GROQ_API_KEY environment variable.")
@@ -196,69 +201,64 @@ Provide specific recommendations."""
             for best_machine in compatible:
                 machine_id = best_machine.machine_id
                 
-                # Calculate setup time
-                prev_product = current_product[machine_id]
-                if prev_product:
-                    setup_time = constraint.get_setup_time(prev_product, job.product_type)
-                else:
-                    setup_time = 0
+                # Start searching for a slot from current machine time
+                search_start_time = current_time[machine_id]
+                found_slot = False
                 
-                # Calculate proposed timing
-                start = current_time[machine_id]
-                start_minutes = start.hour * 60 + start.minute + setup_time
-                end_minutes = start_minutes + job.processing_time
-                
-                proposed_start = time(start_minutes // 60, start_minutes % 60)
-                proposed_end = time(min(end_minutes // 60, 23), end_minutes % 60)
-                
-                # Check for downtime conflicts
-                has_conflict = False
-                for downtime in best_machine.downtime_windows:
-                    if downtime.overlaps_with(proposed_start, proposed_end):
-                        has_conflict = True
-                        # Skip past the downtime
-                        dt_end_minutes = downtime.end_time.hour * 60 + downtime.end_time.minute
-                        current_time[machine_id] = time(dt_end_minutes // 60, dt_end_minutes % 60)
-                        break
-                
-                if has_conflict:
-                    # Try again after downtime
-                    start = current_time[machine_id]
-                    start_minutes = start.hour * 60 + start.minute + setup_time
-                    end_minutes = start_minutes + job.processing_time
+                # Maximum attempts to find a slot
+                for _ in range(10):
+                    # Calculate setup time
+                    prev_product = current_product[machine_id]
+                    if prev_product:
+                        setup_time = constraint.get_setup_time(prev_product, job.product_type)
+                    else:
+                        setup_time = 0
                     
-                    proposed_start = time(start_minutes // 60, start_minutes % 60)
-                    proposed_end = time(min(end_minutes // 60, 23), end_minutes % 60)
+                    # Proposed window
+                    start_min = search_start_time.hour * 60 + search_start_time.minute + setup_time
+                    end_min = start_min + job.processing_time
                     
-                    # Check again
-                    still_conflict = False
+                    # Shift boundary check
+                    shift_end_min = constraint.shift_end.hour * 60 + constraint.shift_end.minute + constraint.max_overtime_minutes
+                    if end_min > shift_end_min:
+                        break # Job won't fit on this machine today
+                        
+                    proposed_start = time(start_min // 60, start_min % 60)
+                    proposed_end = time(min(end_min // 60, 23), end_min % 60)
+                    
+                    # Check downtime conflicts
+                    conflict_dt = None
+                    now = datetime.now()
                     for downtime in best_machine.downtime_windows:
-                        if downtime.overlaps_with(proposed_start, proposed_end):
-                            still_conflict = True
+                        if downtime.overlaps_with(proposed_start, proposed_end, date_context=now):
+                            conflict_dt = downtime
                             break
                     
-                    if still_conflict:
-                        # Can't fit on this machine, try next one
-                        continue
+                    if not conflict_dt:
+                        # Success! Found a slot
+                        assignment = JobAssignment(
+                            job=job,
+                            machine_id=machine_id,
+                            start_time=proposed_start,
+                            end_time=proposed_end,
+                            setup_time_before=setup_time
+                        )
+                        new_schedule.add_assignment(assignment)
+                        
+                        # Update tracking
+                        current_time[machine_id] = proposed_end
+                        current_product[machine_id] = job.product_type
+                        current_loads[machine_id] += job.processing_time + setup_time
+                        assigned = True
+                        found_slot = True
+                        break
+                    else:
+                        # Skip past the downtime and search again
+                        dt_end = conflict_dt.end_time
+                        search_start_time = time(dt_end.hour, dt_end.minute)
                 
-                # No conflict, create assignment
-                assignment = JobAssignment(
-                    job=job,
-                    machine_id=machine_id,
-                    start_time=proposed_start,
-                    end_time=proposed_end,
-                    setup_time_before=setup_time
-                )
-                
-                new_schedule.add_assignment(assignment)
-                
-                # Update tracking
-                current_time[machine_id] = proposed_end
-                current_product[machine_id] = job.product_type
-                current_loads[machine_id] += job.processing_time + setup_time
-                
-                assigned = True
-                break  # Successfully assigned
+                if found_slot:
+                    break # Move to next job
         
         # Calculate improvement
         new_max_load = max(current_loads.values()) if current_loads else 0

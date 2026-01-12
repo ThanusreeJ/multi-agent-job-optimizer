@@ -3,37 +3,47 @@ Data Generator for Job Optimizer Demo
 """
 
 import random
-from datetime import time
-from typing import List, Dict, Any
+import io
+import pandas as pd
+from datetime import time, datetime, timedelta
+from typing import List, Dict, Any, Optional, Tuple
 from models.job import Job
-from models.machine import Machine, Constraint
+from models.machine import Machine, Constraint, DowntimeWindow
 
-def generate_random_jobs(num_jobs: int = 5, rush_probability: float = 0.3) -> List[Job]:
+def generate_random_jobs(num_jobs: int = 5, rush_probability: float = 0.3, machines: Optional[List[Machine]] = None, constraint: Optional[Constraint] = None) -> List[Job]:
     """
-    Generate random jobs with TIGHT deadlines to force optimization needs.
+    Generate random jobs with deadlines based on shift constraints.
     """
-    products = ['P_A', 'P_B', 'P_C']
+    if machines is None:
+        machines = get_demo_machines()
+    if constraint is None:
+        constraint = get_demo_constraint()
+        
+    # Get all unique products from machine capabilities
+    all_products = set()
+    for m in machines:
+        all_products.update(m.capabilities)
+    products = sorted(list(all_products))
+        
     jobs = []
+    
+    # Shift timing for deadline generation
+    start_hour = constraint.shift_start.hour
+    end_hour = constraint.shift_end.hour
     
     for i in range(num_jobs):
         prod = random.choice(products)
-        is_rush = random.random() < rush_probability  # Use the parameter
-
+        is_rush = random.random() < rush_probability
         
-        # Deadlines are TIGHT (09:00 - 11:00) to ensure Baseline fails
-        due_hour = random.randint(9, 11) 
+        # Deadlines are within the first half of the shift to force optimization
+        due_hour = random.randint(start_hour + 1, start_hour + (end_hour - start_hour) // 2 + 1) 
         due_min = random.choice([0, 15, 30, 45])
         
-        # Duration based on product type
-        if prod == 'P_A':
-            duration = 45
-            machine_opts = ["M1", "M2"]
-        elif prod == 'P_B':
-            duration = 60
-            machine_opts = ["M1", "M3"]
-        else: # P_C
-            duration = 30
-            machine_opts = ["M2", "M3"]
+        # Find machines that can handle this product
+        machine_opts = [m.machine_id for m in machines if m.can_produce(prod)]
+            
+        # Standardize duration or randomize it
+        duration = random.choice([30, 45, 60, 90])
             
         jobs.append(Job(
             job_id=f"J{i+1:03d}",
@@ -45,6 +55,110 @@ def generate_random_jobs(num_jobs: int = 5, rush_probability: float = 0.3) -> Li
         ))
         
     return jobs
+
+def generate_random_downtime(machines: List[Machine], constraint: Constraint) -> None:
+    """
+    Scenario A: Randomly generate downtime for testing re-optimization.
+    """
+    if not machines:
+        return
+        
+    # Randomly select a machine
+    machine = random.choice(machines)
+    
+    # Generate random window within shift hours
+    shift_start_min = constraint.shift_start.hour * 60 + constraint.shift_start.minute
+    shift_end_min = constraint.shift_end.hour * 60 + constraint.shift_end.minute
+    
+    # Start between 10% and 70% into the shift
+    start_min_abs = random.randint(
+        shift_start_min + (shift_end_min - shift_start_min) // 10,
+        shift_start_min + (shift_end_min - shift_start_min) * 7 // 10
+    )
+    
+    # Duration 30-120 minutes (clamped to shift end)
+    duration_min = random.choice([30, 45, 60, 90, 120])
+    end_min_abs = min(start_min_abs + duration_min, shift_end_min)
+    
+    # Current date context
+    now = datetime.now()
+    start_dt = datetime.combine(now.date(), time(start_min_abs // 60, start_min_abs % 60))
+    end_dt = datetime.combine(now.date(), time(end_min_abs // 60, end_min_abs % 60))
+    
+    machine.add_downtime(start_dt, end_dt, "Random POC downtime")
+
+def parse_downtime_csv(csv_content: str, machines: List[Machine]) -> List[str]:
+    """
+    Scenario B: Parse CSV content and apply downtime as constraints.
+    CSV Columns: machine_id, downtime_start, downtime_end, reason
+    """
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+        errors = []
+        
+        for _, row in df.iterrows():
+            m_id = str(row['machine_id']).strip()
+            try:
+                start_dt = pd.to_datetime(row['downtime_start'])
+                end_dt = pd.to_datetime(row['downtime_end'])
+            except:
+                errors.append(f"Invalid date format for {m_id}")
+                continue
+                
+            reason = row.get('reason', 'Planned maintenance')
+            
+            target_machine = next((m for m in machines if m.machine_id == m_id), None)
+            if target_machine:
+                target_machine.add_downtime(start_dt, end_dt, reason)
+            else:
+                errors.append(f"Machine {m_id} not found")
+                
+        return errors
+    except Exception as e:
+        return [f"CSV parsing error: {str(e)}"]
+
+def parse_jobs_csv(csv_content: str) -> Tuple[List[Job], List[str]]:
+    """
+    Scenario B: Parse CSV content and create Job objects.
+    CSV Columns: job_id, product_type, processing_time, due_time, priority, machine_options
+    machine_options should be semicolon separated (e.g., "M1;M2")
+    """
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+        jobs = []
+        errors = []
+        
+        for _, row in df.iterrows():
+            job_id = str(row['job_id']).strip()
+            prod = str(row['product_type']).strip()
+            proc_time = int(row['processing_time'])
+            
+            # Parse due time
+            try:
+                dt_obj = pd.to_datetime(row['due_time'])
+                due_time = dt_obj.time()
+            except:
+                errors.append(f"Invalid due_time for {job_id}")
+                continue
+                
+            prio = str(row['priority']).strip().lower()
+            
+            # Parse machine options
+            m_opts_str = str(row['machine_options']).strip()
+            m_opts = [opt.strip() for opt in m_opts_str.split(';')] if ';' in m_opts_str else [m_opts_str]
+            
+            jobs.append(Job(
+                job_id=job_id,
+                product_type=prod,
+                processing_time=proc_time,
+                due_time=due_time,
+                priority=prio,
+                machine_options=m_opts
+            ))
+            
+        return jobs, errors
+    except Exception as e:
+        return [], [f"Job CSV parsing error: {str(e)}"]
 
 def get_demo_machines() -> List[Machine]:
     return [

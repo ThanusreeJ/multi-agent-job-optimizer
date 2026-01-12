@@ -16,11 +16,11 @@ Does NOT use LLM - uses deterministic rule checking for reliability.
 """
 
 import os
+from datetime import time, datetime
 from typing import List, Dict, Any, Tuple
-from datetime import time
 
 from models.job import Job
-from models.machine import Machine, Constraint
+from models.machine import Machine, Constraint, DowntimeWindow
 from models.schedule import Schedule, JobAssignment
 
 
@@ -88,8 +88,9 @@ class ConstraintAgent:
                     )
                 
                 # Check downtime conflicts
+                now = datetime.now() # Use current time as context for today's shift
                 for downtime in machine.downtime_windows:
-                    if downtime.overlaps_with(assignment.start_time, assignment.end_time):
+                    if downtime.overlaps_with(assignment.start_time, assignment.end_time, date_context=now):
                         violations.append(
                             f"Job {assignment.job.job_id} on {assignment.machine_id} "
                             f"overlaps with downtime: {downtime}"
@@ -120,11 +121,18 @@ class ConstraintAgent:
         rush_violations = []
         for assignment in schedule.get_all_jobs():
             if assignment.job.is_rush and assignment.is_late():
-                tardiness = assignment.get_tardiness_minutes()
-                rush_violations.append(
-                    f"CRITICAL: Rush job {assignment.job.job_id} is {tardiness} min late "
-                    f"(due {assignment.job.due_time}, ends {assignment.end_time})"
+                # Check if we already flagged this job for exceeding shift
+                already_flagged_shift = any(
+                    f"Job {assignment.job.job_id}" in v and "exceeds shift" in v 
+                    for v in violations
                 )
+                
+                if not already_flagged_shift:
+                    tardiness = assignment.get_tardiness_minutes()
+                    rush_violations.append(
+                        f"CRITICAL: Rush job {assignment.job.job_id} is {tardiness} min late "
+                        f"(due {assignment.job.due_time}, ends {assignment.end_time})"
+                    )
         
         violations.extend(rush_violations)
         

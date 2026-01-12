@@ -44,6 +44,11 @@ class SupervisorAgent:
         if groq_api_key is None:
             groq_api_key = os.getenv('GROQ_API_KEY')
         
+        # FIX: Remove proxy variables that trigger the 'proxies' argument error in newer httpx versions
+        for var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+            if var in os.environ:
+                del os.environ[var]
+        
         if not groq_api_key:
             raise ValueError("Groq API key required. Set GROQ_API_KEY environment variable.")
         

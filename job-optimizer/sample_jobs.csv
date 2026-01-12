@@ -1,0 +1,6 @@
+job_id,product_type,processing_time,due_time,priority,machine_options
+J101,P_A,45,09:30,normal,M1;M2
+J102,P_B,60,10:00,rush,M1;M3
+J103,P_C,30,11:00,normal,M2;M3
+J104,P_A,90,12:00,rush,M1
+J105,P_B,45,13:00,normal,M3

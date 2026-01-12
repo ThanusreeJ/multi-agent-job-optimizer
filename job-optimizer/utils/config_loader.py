@@ -15,7 +15,7 @@ import yaml
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
-from datetime import time
+from datetime import time, datetime
 from models.machine import Constraint, Machine, DowntimeWindow
 
 
@@ -124,9 +124,15 @@ def load_machines_from_config(config: Dict[str, Any]) -> list[Machine]:
         
         # Parse downtime windows
         downtime_windows = []
+        now = datetime.now()
         for dt_config in machine_config.get('downtime_windows', []):
-            start = parse_time(dt_config['start_time'])
-            end = parse_time(dt_config['end_time'])
+            start_time = parse_time(dt_config['start_time'])
+            end_time = parse_time(dt_config['end_time'])
+            
+            # Combine with current date
+            start = datetime.combine(now.date(), start_time)
+            end = datetime.combine(now.date(), end_time)
+            
             reason = dt_config.get('reason', 'Maintenance')
             downtime_windows.append(DowntimeWindow(start, end, reason))
         

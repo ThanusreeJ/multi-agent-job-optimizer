@@ -24,32 +24,34 @@ class DowntimeWindow:
     
     Used for maintenance, breakdowns, or shift changes.
     """
-    start_time: time      # When downtime starts
-    end_time: time        # When downtime ends
-    reason: str = "Maintenance"  # Why the machine is down
+    start_time: datetime      # Changed from time to datetime
+    end_time: datetime        # Changed from time to datetime
+    reason: str = "Maintenance"
     
-    def overlaps_with(self, start: time, end: time) -> bool:
+    def overlaps_with(self, start: time, end: time, date_context: Optional[datetime] = None) -> bool:
         """
         Check if this downtime overlaps with a given time window.
         
         Args:
             start: Start time to check
             end: End time to check
+            date_context: The date those times refer to (defaults to start_time's date)
             
         Returns:
             True if there's overlap, False otherwise
         """
-        # Convert times to minutes since midnight for comparison
-        dt_start = self.start_time.hour * 60 + self.start_time.minute
-        dt_end = self.end_time.hour * 60 + self.end_time.minute
-        check_start = start.hour * 60 + start.minute
-        check_end = end.hour * 60 + end.minute
+        if date_context is None:
+            date_context = self.start_time
+            
+        # Create datetimes for the check window
+        check_start = datetime.combine(date_context.date(), start)
+        check_end = datetime.combine(date_context.date(), end)
         
-        # Check for overlap
-        return not (check_end <= dt_start or check_start >= dt_end)
+        # Standard interval overlap logic
+        return not (check_end <= self.start_time or check_start >= self.end_time)
     
     def __str__(self) -> str:
-        return f"Downtime({self.start_time}-{self.end_time}: {self.reason})"
+        return f"{self.reason} ({self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')})"
 
 
 @dataclass
@@ -89,35 +91,35 @@ class Machine:
         """
         return product_type in self.capabilities
     
-    def is_available_at(self, time_slot: time) -> bool:
+    def is_available_at(self, time_slot: time, date_context: Optional[datetime] = None) -> bool:
         """
         Check if machine is available (not in downtime) at specific time.
         
         Args:
             time_slot: Time to check
+            date_context: The date to check (defaults to today)
             
         Returns:
             True if available, False if in downtime
         """
-        # Check against all downtime windows
-        slot_minutes = time_slot.hour * 60 + time_slot.minute
+        if date_context is None:
+            date_context = datetime.now()
+            
+        check_dt = datetime.combine(date_context.date(), time_slot)
         
         for downtime in self.downtime_windows:
-            dt_start = downtime.start_time.hour * 60 + downtime.start_time.minute
-            dt_end = downtime.end_time.hour * 60 + downtime.end_time.minute
-            
-            if dt_start <= slot_minutes < dt_end:
+            if downtime.start_time <= check_dt < downtime.end_time:
                 return False
         
         return True
     
-    def add_downtime(self, start: time, end: time, reason: str = "Unplanned"):
+    def add_downtime(self, start: datetime, end: datetime, reason: str = "Unplanned"):
         """
         Add a downtime window to this machine.
         
         Args:
-            start: Downtime start time
-            end: Downtime end time
+            start: Downtime start datetime
+            end: Downtime end datetime
             reason: Reason for downtime
         """
         self.downtime_windows.append(DowntimeWindow(start, end, reason))

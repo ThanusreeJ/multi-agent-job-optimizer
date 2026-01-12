@@ -31,6 +31,7 @@ from agents.supervisor import SupervisorAgent
 from agents.batching_agent import BatchingAgent
 from agents.bottleneck_agent import BottleneckAgent
 from agents.constraint_agent import ConstraintAgent
+from utils.baseline_scheduler import BaselineScheduler
 
 
 class OptimizationState(TypedDict):
@@ -46,12 +47,16 @@ class OptimizationState(TypedDict):
     
     # Intermediate results
     supervisor_analysis: str
+    baseline_schedule: Schedule
+    baseline_explanation: str
     batching_schedule: Schedule
     batching_explanation: str
     bottleneck_schedule: Schedule
     bottleneck_explanation: str
     
     # Validation results
+    baseline_valid: bool
+    baseline_violations: List[str]
     batching_valid: bool
     batching_violations: List[str]
     bottleneck_valid: bool
@@ -84,6 +89,7 @@ class OptimizationOrchestrator:
         """
         # Initialize all agents
         self.supervisor = SupervisorAgent(groq_api_key)
+        self.baseline_scheduler = BaselineScheduler()
         self.batching_agent = BatchingAgent(groq_api_key)
         self.bottleneck_agent = BottleneckAgent(groq_api_key)
         self.constraint_agent = ConstraintAgent()
@@ -103,6 +109,7 @@ class OptimizationOrchestrator:
         
         # Add nodes for each step
         graph.add_node("analyze_request", self._analyze_request)
+        graph.add_node("create_baseline_schedule", self._create_baseline_schedule)
         graph.add_node("create_batching_schedule", self._create_batching_schedule)
         graph.add_node("create_bottleneck_schedule", self._create_bottleneck_schedule)
         graph.add_node("validate_schedules", self._validate_schedules)
@@ -110,7 +117,8 @@ class OptimizationOrchestrator:
         
         # Define edges (workflow flow)
         graph.set_entry_point("analyze_request")
-        graph.add_edge("analyze_request", "create_batching_schedule")
+        graph.add_edge("analyze_request", "create_baseline_schedule")
+        graph.add_edge("create_baseline_schedule", "create_batching_schedule")
         graph.add_edge("create_batching_schedule", "create_bottleneck_schedule")
         graph.add_edge("create_bottleneck_schedule", "validate_schedules")
         graph.add_edge("validate_schedules", "select_best")
@@ -134,6 +142,21 @@ class OptimizationOrchestrator:
         state["supervisor_analysis"] = analysis
         state["status"] = "analyzing"
         
+        return state
+
+    @traceable(name="Baseline Schedule")
+    def _create_baseline_schedule(self, state: OptimizationState) -> OptimizationState:
+        """
+        Step 1b: Create a baseline FIFO schedule.
+        """
+        print("📊 Creating baseline schedule...")
+        sched, exp = self.baseline_scheduler.schedule(
+            state["jobs"],
+            state["machines"],
+            state["constraint"]
+        )
+        state["baseline_schedule"] = sched
+        state["baseline_explanation"] = exp
         return state
     
     @traceable(name="Batching Agent Schedule")
@@ -182,10 +205,20 @@ class OptimizationOrchestrator:
     @traceable(name="Constraint Validation")
     def _validate_schedules(self, state: OptimizationState) -> OptimizationState:
         """
-        Step 4: Validate both candidate schedules.
+        Step 4: Validate all candidate schedules.
         """
         print("✅ Constraint agent validating schedules...")
         
+        # Validate baseline
+        base_valid, base_violations, _ = self.constraint_agent.validate_schedule(
+            state["baseline_schedule"],
+            state["jobs"],
+            state["machines"],
+            state["constraint"]
+        )
+        state["baseline_valid"] = base_valid
+        state["baseline_violations"] = base_violations
+
         # Validate batching schedule
         batching_valid, batching_violations, _ = self.constraint_agent.validate_schedule(
             state["batching_schedule"],
@@ -225,22 +258,34 @@ class OptimizationOrchestrator:
         
         if state["bottleneck_valid"]:
             candidates.append((state["bottleneck_schedule"], "Load-Balanced (Bottleneck Relief)"))
+
+        if state["baseline_valid"]:
+            candidates.append((state["baseline_schedule"], "Baseline FIFO (Fallback)"))
         
         if not candidates:
             # No valid schedules - this is a failure
             state["status"] = "failed"
+            
+            # Combine all violations for debugging
+            all_v = []
+            if state["batching_violations"]:
+                all_v.append("BATCHING VIOLATIONS:\n" + "\n".join("- " + v for v in state["batching_violations"]))
+            if state["bottleneck_violations"]:
+                all_v.append("BOTTLENECK VIOLATIONS:\n" + "\n".join("- " + v for v in state["bottleneck_violations"]))
+            if state["baseline_violations"]:
+                all_v.append("BASELINE VIOLATIONS:\n" + "\n".join("- " + v for v in state["baseline_violations"]))
+
             state["final_explanation"] = f"""
-OPTIMIZATION FAILED
+❌ OPTIMIZATION FAILED
 
-Both candidate schedules have constraint violations:
+None of the generated candidate schedules met all mandatory operational constraints.
 
-Batching Schedule Violations:
-{chr(10).join('- ' + v for v in state["batching_violations"])}
+{chr(10).join(all_v)}
 
-Bottleneck Schedule Violations:
-{chr(10).join('- ' + v for v in state["bottleneck_violations"])}
-
-Recommendation: Adjust constraints or job requirements and retry.
+RECOMMENDATION:
+- Check if special jobs (Rush) have impossible deadlines.
+- Check if total load exceeds total machine capacity + shift duration.
+- Try reducing the number of jobs or extending shift boundaries in 'System Configuration'.
 """
             return state
         
@@ -284,10 +329,14 @@ Recommendation: Adjust constraints or job requirements and retry.
             machines=machines,
             constraint=constraint,
             supervisor_analysis="",
+            baseline_schedule=None,
+            baseline_explanation="",
             batching_schedule=None,
             batching_explanation="",
             bottleneck_schedule=None,
             bottleneck_explanation="",
+            baseline_valid=False,
+            baseline_violations=[],
             batching_valid=False,
             batching_violations=[],
             bottleneck_valid=False,
