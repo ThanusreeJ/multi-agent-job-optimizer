@@ -335,10 +335,14 @@ elif page == "🚀 Optimization Engine":
                         st.session_state.results['Orchestrated'] = {'schedule': res['schedule'], 'explanation': res['explanation']}
                         
                     if res['success']:
-                        status.update(label="✅ Optimization Success!", state="complete")
-                        st.balloons()
+                        # Check if it's best-effort or fully valid
+                        if res.get('status') == 'best-effort':
+                            status.update(label="⚠️ Best Effort Schedule (Some constraints unmet)", state="complete")
+                            st.warning("Schedule generated with some constraint violations. See details below.")
+                        else:
+                            status.update(label="✅ Optimization Success!", state="complete")
                     else:
-                        status.update(label="⚠️ Constraints Unmet (Best Effort shown)", state="error")
+                        status.update(label="❌ Optimization Failed", state="error")
 
         # Scenario C: Sudden Failure
         st.markdown("---")
@@ -354,20 +358,22 @@ elif page == "🚀 Optimization Engine":
             with dis_c3:
                 fail_dur = st.number_input("Minutes Down", value=120, step=15)
 
-            if st.button("💥 Trigger Failure & Re-optimize", use_container_width=True, type="primary"):
-                now = datetime.now()
-                fail_start_dt = datetime.combine(now.date(), fail_time)
-                fail_end_dt = fail_start_dt + timedelta(minutes=fail_dur)
-                target_machine = next((m for m in st.session_state.machines if m.machine_id == fail_m_id))
-                target_machine.add_downtime(fail_start_dt, fail_end_dt, "Panic: Unplanned Failure")
-                
-                with st.status("🔄 EMERGENCY ACTION...", expanded=True) as status:
-                    orchestrator = OptimizationOrchestrator()
-                    res = orchestrator.optimize(st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
-                    if res['success']:
-                        st.session_state.results['Event-Driven'] = {'schedule': res['schedule'], 'explanation': res['explanation']}
-                        status.update(label="✅ Disruption Resolved", state="complete")
-                        st.snow()
+            trigger_failure = st.button("💥 Trigger Failure & Re-optimize", use_container_width=True, type="primary")
+
+        # Handle failure trigger outside expander to avoid nesting st.status
+        if trigger_failure:
+            now = datetime.now()
+            fail_start_dt = datetime.combine(now.date(), fail_time)
+            fail_end_dt = fail_start_dt + timedelta(minutes=fail_dur)
+            target_machine = next((m for m in st.session_state.machines if m.machine_id == fail_m_id))
+            target_machine.add_downtime(fail_start_dt, fail_end_dt, "Panic: Unplanned Failure")
+            
+            with st.status("🔄 EMERGENCY ACTION...", expanded=True) as status:
+                orchestrator = OptimizationOrchestrator()
+                res = orchestrator.optimize(st.session_state.jobs, st.session_state.machines, st.session_state.constraint)
+                if res['success']:
+                    st.session_state.results['Event-Driven'] = {'schedule': res['schedule'], 'explanation': res['explanation']}
+                    status.update(label="✅ Disruption Resolved", state="complete")
 
         # Dashboard Logic
         if st.session_state.results:

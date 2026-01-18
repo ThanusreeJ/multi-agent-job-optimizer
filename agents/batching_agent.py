@@ -201,7 +201,7 @@ Format your response as specific recommendations."""
                 found_slot = False
                 
                 # Maximum attempts to find a slot (avoid infinite loops)
-                for _ in range(10):
+                for _ in range(20):
                     # Calculate setup time
                     prev_product = current_product[machine_id]
                     if prev_product and prev_product != job.product_type:

@@ -174,9 +174,9 @@ Provide specific recommendations."""
         new_schedule = Schedule()
         remaining_jobs = all_jobs.copy()
         
-        # Sort jobs by priority (rush first) then by processing time (longest first)
+        # Sort jobs by priority (rush first) then by deadline (earliest first)
         remaining_jobs.sort(
-            key=lambda j: (0 if j.is_rush else 1, -j.processing_time)
+            key=lambda j: (0 if j.is_rush else 1, j.due_time)
         )
         
         # Assign jobs using load-balancing strategy
@@ -205,8 +205,8 @@ Provide specific recommendations."""
                 search_start_time = current_time[machine_id]
                 found_slot = False
                 
-                # Maximum attempts to find a slot
-                for _ in range(10):
+                # Maximum attempts to find a slot (increased to handle more downtimes)
+                for _ in range(20):
                     # Calculate setup time
                     prev_product = current_product[machine_id]
                     if prev_product:
@@ -263,9 +263,19 @@ Provide specific recommendations."""
         # Calculate improvement
         new_max_load = max(current_loads.values()) if current_loads else 0
         new_min_load = min(current_loads.values()) if current_loads else 0
-        improvement = (max_load - min_load) - (new_max_load - new_min_load)
+        old_imbalance = max_load - min_load
+        new_imbalance = new_max_load - new_min_load
+        improvement = old_imbalance - new_imbalance
         
         # Generate explanation
+        improvement_text = f"{improvement:+d} min" if improvement != 0 else "0 min (no change)"
+        if improvement > 0:
+            improvement_desc = f"✅ IMPROVED: {improvement_text} reduction in imbalance"
+        elif improvement < 0:
+            improvement_desc = f"⚠️ WORSENED: {-improvement} min increase in imbalance"
+        else:
+            improvement_desc = "No change in imbalance"
+        
         explanation = f"""BOTTLENECK AGENT ANALYSIS:
 {llm_analysis}
 
@@ -273,13 +283,13 @@ LOAD BALANCING RESULTS:
 Original Load Distribution:
 - Max load: {max_load} min
 - Min load: {min_load} min
-- Imbalance: {max_load - min_load} min
+- Imbalance: {old_imbalance} min
 
 Rebalanced Load Distribution:
 - Max load: {new_max_load} min
 - Min load: {new_min_load} min
-- Imbalance: {new_max_load - new_min_load} min
-- Improvement: {improvement} min reduction in imbalance
+- Imbalance: {new_imbalance} min
+- Result: {improvement_desc}
 
 STRATEGY:
 - Used load-aware assignment (always choose least-loaded compatible machine)

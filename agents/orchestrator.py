@@ -250,43 +250,61 @@ class OptimizationOrchestrator:
         """
         print("🎯 Supervisor selecting best schedule...")
         
-        # Collect valid candidates
-        candidates = []
+        # Collect valid candidates first
+        valid_candidates = []
         
         if state["batching_valid"]:
-            candidates.append((state["batching_schedule"], "Batching-Optimized (Setup Minimization)"))
+            valid_candidates.append((state["batching_schedule"], "Batching-Optimized (Setup Minimization)", 0))
         
         if state["bottleneck_valid"]:
-            candidates.append((state["bottleneck_schedule"], "Load-Balanced (Bottleneck Relief)"))
+            valid_candidates.append((state["bottleneck_schedule"], "Load-Balanced (Bottleneck Relief)", 0))
 
         if state["baseline_valid"]:
-            candidates.append((state["baseline_schedule"], "Baseline FIFO (Fallback)"))
+            valid_candidates.append((state["baseline_schedule"], "Baseline FIFO (Fallback)", 0))
         
-        if not candidates:
-            # No valid schedules - this is a failure
-            state["status"] = "failed"
+        if valid_candidates:
+            # We have valid schedules - select best
+            candidates = [(sched, name) for sched, name, _ in valid_candidates]
+        else:
+            # No fully valid schedules - use best-effort approach
+            # Select the schedule with fewest violations
+            print("⚠️  No fully valid schedules found - using best-effort approach")
             
-            # Combine all violations for debugging
-            all_v = []
-            if state["batching_violations"]:
-                all_v.append("BATCHING VIOLATIONS:\n" + "\n".join("- " + v for v in state["batching_violations"]))
-            if state["bottleneck_violations"]:
-                all_v.append("BOTTLENECK VIOLATIONS:\n" + "\n".join("- " + v for v in state["bottleneck_violations"]))
-            if state["baseline_violations"]:
-                all_v.append("BASELINE VIOLATIONS:\n" + "\n".join("- " + v for v in state["baseline_violations"]))
-
+            best_effort = [
+                (state["batching_schedule"], "Batching-Optimized (Best Effort)", len(state["batching_violations"])),
+                (state["bottleneck_schedule"], "Load-Balanced (Best Effort)", len(state["bottleneck_violations"])),
+                (state["baseline_schedule"], "Baseline FIFO (Best Effort)", len(state["baseline_violations"]))
+            ]
+            
+            # Sort by fewest violations
+            best_effort.sort(key=lambda x: x[2])
+            
+            # Take the one with fewest violations
+            best_schedule, best_name, violation_count = best_effort[0]
+            
+            # Format violations for display
+            if best_name.startswith("Batching"):
+                violations = state["batching_violations"]
+            elif best_name.startswith("Load"):
+                violations = state["bottleneck_violations"]
+            else:
+                violations = state["baseline_violations"]
+            
+            state["final_schedule"] = best_schedule
             state["final_explanation"] = f"""
-❌ OPTIMIZATION FAILED
+⚠️ BEST-EFFORT SCHEDULE ({best_name})
 
-None of the generated candidate schedules met all mandatory operational constraints.
+No schedule could meet all constraints. Selected schedule with fewest violations ({violation_count}).
 
-{chr(10).join(all_v)}
+VIOLATIONS:
+{chr(10).join('- ' + v for v in violations)}
 
 RECOMMENDATION:
-- Check if special jobs (Rush) have impossible deadlines.
-- Check if total load exceeds total machine capacity + shift duration.
-- Try reducing the number of jobs or extending shift boundaries in 'System Configuration'.
+- Some constraints may be impossible to meet simultaneously
+- Consider extending shift duration, reducing job count, or relaxing rush deadlines
+- Review machine downtime schedules for conflicts
 """
+            state["status"] = "best-effort"
             return state
         
         # Select best
@@ -364,8 +382,9 @@ RECOMMENDATION:
         print("="*70 + "\n")
         
         # Return results
+        # Success if completed (fully valid) or best-effort (has a schedule with violations)
         return {
-            "success": final_state["status"] == "completed",
+            "success": final_state["status"] in ["completed", "best-effort"],
             "schedule": final_state["final_schedule"],
             "explanation": final_state["final_explanation"],
             "optimization_time": final_state["optimization_time_seconds"],
