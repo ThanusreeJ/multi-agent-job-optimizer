@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  job-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-agent-job-optimizer
+    ports:
+      - "8501:8501"
+    environment:
+      # Load from .env file
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL_NAME=${GROQ_MODEL_NAME:-llama-3.3-70b-versatile}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-job-optimizer-demo}
+    env_file:
+      - .env
+    volumes:
+      # Mount local code for development (optional - comment out for production)
+      - ./ui:/app/ui
+      - ./agents:/app/agents
+      - ./models:/app/models
+      - ./utils:/app/utils
+      # Mount data files
+      - ./sample_jobs.csv:/app/sample_jobs.csv
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - job-optimizer-network
+
+networks:
+  job-optimizer-network:
+    driver: bridge

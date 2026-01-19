@@ -55,6 +55,12 @@ wheels/
 PRESENTATION_SLIDES.md
 PROGRESS.md
 QUICK_START.md
+DEMO_SCRIPT.md
+DEMO_SCRIPT_v2.md
+PPT_PRESENTATION_SCRIPT.md
+*.ppt
+*.pptx
+conceptnote.md
 
 
 # Logs
@@ -74,7 +80,16 @@ debug_output/
 .git/
 
 # ============================================
+# DOCKER / PODMAN
+# ============================================
+# Don't exclude Dockerfile and docker-compose.yml (needed for deployment)
+# But exclude runtime/build artifacts
+*.tar
+*.tar.gz
+
+# ============================================
 # OPTIONAL: Uncomment if needed
 # ============================================
 # sample_jobs.csv    # Uncomment if using real production data
 # PROJECT_GUIDE.md   # Uncomment if you want to exclude user guide
+# DOCKER_GUIDE.md    # Uncomment if you want to exclude Docker guide

@@ -40,77 +40,446 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom Styling
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .main-header {
-        font-family: 'Outfit', sans-serif;
-        font-size: 3.2rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #1f77b4, #00d2ff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 0rem;
-    }
-    
-    .sub-header {
-        font-size: 1.1rem;
-        color: #888;
-        text-align: center;
-        margin-bottom: 2.5rem;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-    }
-    
-    /* Card/Container Styling */
-    div.stButton > button {
-        border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    
-    div.stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-        background-color: transparent;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        font-weight: 600;
-    }
-    
-    .stMetric {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        border: 1px solid #f0f2f6;
-    }
-    
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background-color: #f8f9fb;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session state for theme
+if 'theme' not in st.session_state:
+    st.session_state.theme = "Light"
+
+# Custom Styling - Dynamic based on theme
+if st.session_state.theme == "Dark":
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;700&display=swap');
+        
+        html, body, [class*="css"] {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .stApp {
+            background-color: #0e1117;
+            color: #fafafa;
+        }
+        
+        .main .block-container {
+            background-color: #0e1117;
+            color: #fafafa;
+        }
+        
+        h1, h2, h3, h4, h5, h6, p, div, span, label {
+            color: #fafafa !important;
+        }
+        
+        /* Input fields and form controls */
+        input, textarea, select {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+            border-color: #31333d !important;
+        }
+        
+        .stTextInput > div > div > input {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stSelectbox > div > div > div {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stSelectbox label {
+            color: #fafafa !important;
+        }
+        
+        .stNumberInput > div > div > input {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stNumberInput > div > div {
+            background-color: #262730 !important;
+        }
+        
+        .stNumberInput input[type="number"] {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stNumberInput label {
+            color: #fafafa !important;
+        }
+        
+        .stTimeInput > div > div > input {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stTimeInput > div > div {
+            background-color: #262730 !important;
+        }
+        
+        .stTimeInput input[type="time"] {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        .stTimeInput label {
+            color: #fafafa !important;
+        }
+        
+        /* All input backgrounds */
+        input[type="text"],
+        input[type="number"],
+        input[type="time"],
+        input[type="date"] {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        /* Code blocks and inline code */
+        code {
+            background-color: #1a1b24 !important;
+            color: #00d2ff !important;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
+        }
+        
+        pre {
+            background-color: #1a1b24 !important;
+            color: #fafafa !important;
+        }
+        
+        /* Dataframe and tables - MORE SPECIFIC */
+        .dataframe {
+            background-color: #0e1117 !important;
+            color: #ffffff !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        .dataframe th {
+            background-color: #1a1b24 !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        .dataframe td {
+            background-color: #262730 !important;
+            color: #ffffff !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        .dataframe tbody tr {
+            background-color: #262730 !important;
+        }
+        
+        .dataframe tbody tr:hover {
+            background-color: #31333d !important;
+        }
+        
+        [data-testid="stDataFrameResizable"] {
+            background-color: #0e1117 !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        [data-testid="stDataFrameResizable"] * {
+            color: #ffffff !important;
+        }
+        
+        [data-testid="stDataFrameResizable"] th {
+            background-color: #1a1b24 !important;
+            color: #ffffff !important;
+        }
+        
+        [data-testid="stDataFrameResizable"] td {
+            background-color: #262730 !important;
+            color: #ffffff !important;
+        }
+        
+        /* Table headers */
+        table thead tr th {
+            background-color: #1a1b24 !important;
+            color: #ffffff !important;
+        }
+        
+        table tbody tr td {
+            background-color: #262730 !important;
+            color: #ffffff !important;
+        }
+        
+        /* Expanders */
+        [data-testid="stExpander"] {
+            background-color: #262730 !important;
+            border-color: #31333d !important;
+        }
+        
+        [data-testid="stExpander"] * {
+            color: #fafafa !important;
+        }
+        
+        .main-header {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.2rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #4da6ff, #00d2ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 0rem;
+        }
+        
+        .sub-header {
+            font-size: 1.1rem;
+            color: #b0b0b0 !important;
+            text-align: center;
+            margin-bottom: 2.5rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        div.stButton > button {
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            background-color: #262730 !important;
+            color: #fafafa !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        div.stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255,255,255,0.1);
+            background-color: #31333d !important;
+        }
+        
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+            background-color: transparent;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            white-space: pre-wrap;
+            background-color: transparent;
+            border-radius: 4px 4px 0px 0px;
+            gap: 1px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            font-weight: 600;
+            color: #fafafa;
+        }
+        
+        .stMetric {
+            background: #262730;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid #31333d;
+        }
+        
+        section[data-testid="stSidebar"] {
+            background-color: #1a1b24 !important;
+        }
+        
+        section[data-testid="stSidebar"] * {
+            color: #fafafa !important;
+        }
+        
+        section[data-testid="stSidebar"] label {
+            color: #fafafa !important;
+        }
+        
+        [data-testid="stMarkdownContainer"] p {
+            color: #fafafa !important;
+        }
+        
+        .stDataFrame, .stTable {
+            background-color: #1a1b24 !important;
+            color: #fafafa !important;
+        }
+        
+        /* Radio buttons */
+        .stRadio > label {
+            color: #fafafa !important;
+        }
+        
+        .stRadio [data-baseweb="radio"] {
+            background-color: #262730 !important;
+        }
+        
+        [data-testid="stFileUploader"] {
+            background-color: #262730 !important;
+            border: 2px dashed #31333d !important;
+        }
+        
+        [data-testid="stFileUploader"] * {
+            color: #fafafa !important;
+        }
+        
+        [data-testid="stFileUploader"] label {
+            color: #fafafa !important;
+        }
+        
+        [data-testid="stFileUploader"] section {
+            background-color: #262730 !important;
+        }
+        
+        [data-testid="stFileUploader"] section * {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        [data-testid="stFileUploader"] section small {
+            color: #b0b0b0 !important;
+        }
+        
+        [data-testid="stFileUploader"] button {
+            background-color: #31333d !important;
+            color: #fafafa !important;
+            border: 1px solid #4da6ff !important;
+        }
+        
+        [data-testid="stFileUploader"] button:hover {
+            background-color: #3d3f4f !important;
+        }
+        
+        /* File uploader inner content */
+        [data-testid="stFileUploadDropzone"] {
+            background-color: #262730 !important;
+        }
+        
+        [data-testid="stFileUploadDropzone"] * {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        /* Override any remaining white backgrounds in file uploader */
+        .uploadedFile {
+            background-color: #262730 !important;
+            border: 1px solid #31333d !important;
+        }
+        
+        .uploadedFileName {
+            color: #fafafa !important;
+        }
+        
+        .uploadedFileData {
+            color: #b0b0b0 !important;
+        }
+        
+        /* Slider */
+        .stSlider > div > div {
+            color: #fafafa !important;
+        }
+        
+        .stSlider label {
+            color: #fafafa !important;
+        }
+        
+        /* Info/success/warning/error boxes */
+        .stAlert {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        /* Selectbox dropdown menu */
+        [role="listbox"] {
+            background-color: #262730 !important;
+        }
+        
+        [role="option"] {
+            background-color: #262730 !important;
+            color: #fafafa !important;
+        }
+        
+        [role="option"]:hover {
+            background-color: #31333d !important;
+        }
+        
+        /* Dropdown arrow */
+        svg {
+            color: #fafafa !important;
+        }
+        
+        /* All text elements */
+        * {
+            color: #fafafa;
+        }
+        
+        /* Ensure all labels are visible */
+        label, .stMarkdown, .stText {
+            color: #fafafa !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+else:  # Light theme
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;700&display=swap');
+        
+        html, body, [class*="css"] {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .main-header {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.2rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #1f77b4, #00d2ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 0rem;
+        }
+        
+        .sub-header {
+            font-size: 1.1rem;
+            color: #888;
+            text-align: center;
+            margin-bottom: 2.5rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        
+        div.stButton > button {
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        div.stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+            background-color: transparent;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            white-space: pre-wrap;
+            background-color: transparent;
+            border-radius: 4px 4px 0px 0px;
+            gap: 1px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .stMetric {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            border: 1px solid #f0f2f6;
+        }
+        
+        section[data-testid="stSidebar"] {
+            background-color: #f8f9fb;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 # Header
 st.markdown('<p class="main-header">🏭 Multi-Agent Production Optimizer</p>', unsafe_allow_html=True)
@@ -181,6 +550,16 @@ def create_gantt(schedule, machines, constraint):
 with st.sidebar:
     st.markdown("### 🧭 Navigation")
     page = st.radio("Go to:", ["📁 Data Setup", "🚀 Optimization Engine", "⚙️ System Configuration"])
+    
+    st.markdown("---")
+    st.markdown("### 🎨 Theme")
+    # Set correct default index based on current theme
+    current_index = 0 if st.session_state.theme == "Light" else 1
+    theme_choice = st.radio("Select Theme:", ["☀️ Light", "🌙 Dark"], index=current_index, horizontal=True)
+    new_theme = "Light" if "Light" in theme_choice else "Dark"
+    if new_theme != st.session_state.theme:
+        st.session_state.theme = new_theme
+        st.rerun()
     
     st.markdown("---")
     st.markdown("### 📊 System Health")
@@ -393,34 +772,37 @@ elif page == "🚀 Optimization Engine":
             selected_sched = selected_data['schedule']
             selected_explanation = selected_data.get('explanation', "Details processing...")
             
-            v_col1, v_col2 = st.columns([2, 1])
-            with v_col1:
-                st.subheader(f"📅 {selected_name} Visualization")
-                st.plotly_chart(create_gantt(selected_sched, st.session_state.machines, st.session_state.constraint), use_container_width=True)
-                
-                # Job Allocation Table
-                st.subheader("📋 Job Allocation Details")
-                sched_rows = []
-                for m_id, assigns in selected_sched.assignments.items():
-                    for a in assigns:
-                        sched_rows.append({
-                            "Machine": m_id,
-                            "Job ID": a.job.job_id,
-                            "Product": a.job.product_type,
-                            "Start": a.start_time.strftime("%H:%M"),
-                            "End": a.end_time.strftime("%H:%M"),
-                            "Duration": f"{a.job.processing_time} min",
-                            "Priority": "⚡ RUSH" if a.job.is_rush else "Normal"
-                        })
-                if sched_rows:
-                    df_sched = pd.DataFrame(sched_rows).sort_values(by=["Machine", "Start"])
-                    st.dataframe(df_sched, use_container_width=True, hide_index=True)
-
-            with v_col2:
+            # Full-width Gantt Chart
+            st.subheader(f"📅 {selected_name} Visualization")
+            st.plotly_chart(create_gantt(selected_sched, st.session_state.machines, st.session_state.constraint), use_container_width=True)
+            
+            # Full-width Job Allocation Table
+            st.subheader("📋 Job Allocation Details")
+            sched_rows = []
+            for m_id, assigns in selected_sched.assignments.items():
+                for a in assigns:
+                    sched_rows.append({
+                        "Machine": m_id,
+                        "Job ID": a.job.job_id,
+                        "Product": a.job.product_type,
+                        "Start": a.start_time.strftime("%H:%M"),
+                        "End": a.end_time.strftime("%H:%M"),
+                        "Duration": f"{a.job.processing_time} min",
+                        "Priority": "⚡ RUSH" if a.job.is_rush else "Normal"
+                    })
+            if sched_rows:
+                df_sched = pd.DataFrame(sched_rows).sort_values(by=["Machine", "Start"])
+                st.dataframe(df_sched, use_container_width=True, hide_index=True)
+            
+            # AI Reasoning and Compliance moved below (full width)
+            st.markdown("---")
+            reason_col1, reason_col2 = st.columns(2)
+            
+            with reason_col1:
                 st.markdown("### 📝 AI Reasoning")
                 st.markdown(selected_explanation)
-                
-                # Compliance Summary
+            
+            with reason_col2:
                 st.markdown("### ✅ Compliance")
                 with st.spinner("Validating..."):
                     v_agent = ConstraintAgent()
@@ -429,7 +811,6 @@ elif page == "🚀 Optimization Engine":
                         st.success("Complies with all constraints.")
                     else:
                         st.error(f"{len(violations)} violations found.")
-                        # Show all violations in an expander for readability
                         with st.expander("View All Violations", expanded=True):
                             for v in violations: st.write(f"- {v}")
 
